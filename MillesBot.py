@@ -63,10 +63,9 @@ class StaffBot(discord.Client):
 
     async def setup_hook(self):
         async def is_guild(interaction: discord.Interaction) -> bool:
-            """Проверка что команда используется на сервере"""
             if interaction.guild is None:
                 await interaction.response.send_message(
-                    "❌ Команды можно использовать только на сервере",
+                    "❌ Команды можно использовать только на сервере!",
                     ephemeral=True
                 )
                 return False
@@ -93,7 +92,7 @@ class StaffBot(discord.Client):
             current_warnings = self.warnings[employee.id]
             
             if current_warnings >= MAX_WARNINGS:
-                embed = discord.Embed(title="⚖️ Выговор работника", color=0xff0000)
+                embed = discord.Embed(title="⚠️ Выговор работника", color=0xff0000)
                 embed.add_field(name="Работник", value=employee.mention, inline=True)
                 embed.add_field(name="Причина", value=reason, inline=False)
                 embed.add_field(name="Дата", value=datetime.now().strftime("%d.%m.%Y"), inline=True)
@@ -106,7 +105,7 @@ class StaffBot(discord.Client):
                 await self.auto_dismiss_employee(interaction, employee)
                 return
             
-            embed = discord.Embed(title="⚖️ Выговор работника", color=0xff0000)
+            embed = discord.Embed(title="⚠️ Выговор работника", color=0xff0000)
             embed.add_field(name="Работник", value=employee.mention, inline=True)
             embed.add_field(name="Причина", value=reason, inline=False)
             embed.add_field(name="Дата", value=datetime.now().strftime("%d.%m.%Y"), inline=True)
