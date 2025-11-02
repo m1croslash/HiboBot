@@ -170,7 +170,7 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
                 
-            allowed_roles_ids = [1434201626062880838]
+            allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
             
             if not any(role in allowed_roles_ids for role in user_roles):
@@ -262,7 +262,7 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
                 
-            allowed_roles_ids = [1434201626062880838]
+            allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112, 1200579581111959620]
             user_roles = [role.id for role in interaction.user.roles]
             
             if not any(role in allowed_roles_ids for role in user_roles) and interaction.user.id != employee.id:
@@ -308,7 +308,7 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
                 
-            allowed_roles_ids = []
+            allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
             
             if not any(role in allowed_roles_ids for role in user_roles):
@@ -344,7 +344,7 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
                 
-            allowed_roles_ids = [1434201626062880838]
+            allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
             
             if not any(role in allowed_roles_ids for role in user_roles):
@@ -367,7 +367,7 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
                 
-            allowed_roles_ids = [1434201626062880838]
+            allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
             
             if not any(role in allowed_roles_ids for role in user_roles):
@@ -389,7 +389,7 @@ class StaffBot(discord.Client):
             await interaction.response.send_message(embed=embed)
             await self.send_to_employee_dm(employee, embed)
             
-            role_ids = [1434494581700825229]
+            role_ids = [1200579581111959620]
             for role_id in role_ids:
                 role = employee.guild.get_role(role_id)
                 if role:
@@ -404,7 +404,7 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
                 
-            allowed_roles_ids = [1434201626062880838]
+            allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
 
             if not any(role in allowed_roles_ids for role in user_roles):
