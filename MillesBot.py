@@ -57,20 +57,20 @@ class StaffBot(discord.Client):
         embed.add_field(name="Период работы", value=f"{start_date} - {datetime.now().strftime('%d.%m.%Y')}", inline=False)
         embed.add_field(name="Количество выговоров", value="3/3", inline=True)
         embed.set_footer(text="Автоматическое увольнение")
-
+        
         await interaction.followup.send(embed=embed)
         await self.send_to_employee_dm(employee, embed)
-
+        
         roles_to_remove = [1434494581700825229]
         for role_id in roles_to_remove:
             role = employee.guild.get_role(role_id)
             if role and role in employee.roles:
-                try: 
+                try:
                     await employee.remove_roles(role)
-                    print(f"Удалена роль: {role.name} у {employee.name}")
+                    print(f"Удалена роль {role.name} у {employee.name}")
                 except Exception as e:
                     print(f"Ошибка при удалении роли {role_id}: {e}")
-                    
+
     async def setup_hook(self):
         async def is_guild(interaction: discord.Interaction) -> bool:
             if interaction.guild is None:
@@ -207,14 +207,14 @@ class StaffBot(discord.Client):
             
             await interaction.response.send_message(embed=embed)
             await self.send_to_employee_dm(employee, embed)
-
+            
             roles_to_remove = [1434494581700825229]
             for role_id in roles_to_remove:
                 role = employee.guild.get_role(role_id)
                 if role and role in employee.roles:
                     try:
                         await employee.remove_roles(role)
-                        print(f"Удалена роль: {role.name} у {employee.name}")
+                        print(f"Удалена роль {role.name} у {employee.name}")
                     except Exception as e:
                         print(f"Ошибка при удалении роли {role_id}: {e}")
 
