@@ -61,21 +61,20 @@ class StaffBot(discord.Client):
         await interaction.followup.send(embed=embed)
         await self.send_to_employee_dm(employee, embed)
         
-        roles_to_remove = [1434494581700825229]
-        for role_id in roles_to_remove:
+        role_ids = [1434494581700825229]
+        for role_id in role_ids:
             role = employee.guild.get_role(role_id)
-            if role and role in employee.roles:
+            if role:
                 try:
                     await employee.remove_roles(role)
-                    print(f"Удалена роль {role.name} у {employee.name}")
-                except Exception as e:
-                    print(f"Ошибка при удалении роли {role_id}: {e}")
+                except:
+                    pass
 
     async def setup_hook(self):
         async def is_guild(interaction: discord.Interaction) -> bool:
             if interaction.guild is None:
                 await interaction.response.send_message(
-                    "❌ Команды можно использовать только на сервере!",
+                    "❌ Команды можно использовать только на сервере",
                     ephemeral=True
                 )
                 return False
@@ -208,15 +207,14 @@ class StaffBot(discord.Client):
             await interaction.response.send_message(embed=embed)
             await self.send_to_employee_dm(employee, embed)
             
-            roles_to_remove = [1434494581700825229]
-            for role_id in roles_to_remove:
+            role_ids = [1434494581700825229]
+            for role_id in role_ids:
                 role = employee.guild.get_role(role_id)
-                if role and role in employee.roles:
+                if role:
                     try:
                         await employee.remove_roles(role)
-                        print(f"Удалена роль {role.name} у {employee.name}")
-                    except Exception as e:
-                        print(f"Ошибка при удалении роли {role_id}: {e}")
+                    except:
+                        pass
 
         @self.tree.command(name="отпуск", description="Отпуск работника")
         @app_commands.describe(employee="Выберите работника", reason="Причина", duration="Срок отпуска")
