@@ -80,7 +80,6 @@ class StaffBot(discord.Client):
                 embed.add_field(name="Причина", value=reason, inline=False)
                 embed.add_field(name="Дата", value=datetime.now().strftime("%d.%m.%Y"), inline=True)
                 embed.add_field(name="Выговоры", value=f"{current_warnings}/{MAX_WARNINGS}", inline=True)
-                embed.set_footer(text=f"Выдан: {interaction.user.display_name}")
                 
                 await interaction.response.send_message(embed=embed)
                 await self.send_to_employee_dm(employee, embed)
@@ -94,7 +93,6 @@ class StaffBot(discord.Client):
             embed.add_field(name="Причина", value=reason, inline=False)
             embed.add_field(name="Дата", value=datetime.now().strftime("%d.%m.%Y"), inline=True)
             embed.add_field(name="Выговоры", value=f"{current_warnings}/{MAX_WARNINGS}", inline=True)
-            embed.set_footer(text=f"Выдан: {interaction.user.display_name}")
             
             await interaction.response.send_message(embed=embed)
             await self.send_to_employee_dm(employee, embed)
@@ -214,4 +212,4 @@ class StaffBot(discord.Client):
             await interaction.response.send_message("✅ Бот работает")
 
 bot = StaffBot()
-bot.run('')
+bot.run('MTQzNDE4NTkwOTA1Nzc1MzI2OQ.G0XANz.a_DYwGzS5r_Q9jPCJyTGx2YyWg12Bp5NelfHnE')
