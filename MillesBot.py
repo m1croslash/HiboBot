@@ -212,4 +212,4 @@ class StaffBot(discord.Client):
             await interaction.response.send_message("✅ Бот работает")
 
 bot = StaffBot()
-bot.run('MTQzNDE4NTkwOTA1Nzc1MzI2OQ.G0XANz.a_DYwGzS5r_Q9jPCJyTGx2YyWg12Bp5NelfHnE')
+bot.run('')
