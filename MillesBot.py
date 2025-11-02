@@ -99,7 +99,7 @@ class StaffBot(discord.Client):
             await interaction.response.send_message(embed=embed)
             await self.send_to_employee_dm(employee, embed)
 
-        @self.tree.command(name="снять_выговор", description="Снимает выговор у работника")
+        @self.tree.command(name="снять", description="Снимает выговор у работника")
         @app_commands.describe(employee="Выберите работника", amount="Количество выговоров для снятия", reason="Причина снятия")
         async def remove_warn(interaction: discord.Interaction, employee: discord.Member, amount: int = 1, reason: str = "Не указана"):
             if not await is_guild(interaction):
@@ -131,37 +131,6 @@ class StaffBot(discord.Client):
             embed.add_field(name="Причина снятия", value=reason, inline=False)
             embed.add_field(name="Дата", value=datetime.now().strftime("%d.%m.%Y"), inline=True)
             embed.set_footer(text=f"Снял: {interaction.user.display_name}")
-            
-            await interaction.response.send_message(embed=embed)
-            await self.send_to_employee_dm(employee, embed)
-
-        @self.tree.command(name="удалить_выговор", description="Удаляет все выговоры у работника")
-        @app_commands.describe(employee="Выберите работника", reason="Причина удаления")
-        async def delete_warn(interaction: discord.Interaction, employee: discord.Member, reason: str = "Не указана"):
-            if not await is_guild(interaction):
-                return
-                
-            allowed_roles_ids = [1434201626062880838]
-            user_roles = [role.id for role in interaction.user.roles]
-            
-            if not any(role in allowed_roles_ids for role in user_roles):
-                await interaction.response.send_message("❌ Недостаточно прав", ephemeral=True)
-                return
-            
-            if employee.id not in self.warnings or self.warnings[employee.id] <= 0:
-                await interaction.response.send_message("❌ У этого работника нет выговоров", ephemeral=True)
-                return
-            
-            old_count = self.warnings[employee.id]
-            del self.warnings[employee.id]
-            
-            embed = discord.Embed(title="🗑️ Удаление всех выговоров", color=0x00ff00)
-            embed.add_field(name="Работник", value=employee.mention, inline=True)
-            embed.add_field(name="Удалено выговоров", value=str(old_count), inline=True)
-            embed.add_field(name="Текущее количество", value="0/3", inline=True)
-            embed.add_field(name="Причина удаления", value=reason, inline=False)
-            embed.add_field(name="Дата", value=datetime.now().strftime("%d.%m.%Y"), inline=True)
-            embed.set_footer(text=f"Удалил: {interaction.user.display_name}")
             
             await interaction.response.send_message(embed=embed)
             await self.send_to_employee_dm(employee, embed)
