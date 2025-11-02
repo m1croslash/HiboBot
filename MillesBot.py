@@ -1,9 +1,29 @@
+from flask import Flask
+from threading import Thread
 import discord
 from discord import app_commands
 import os
 from datetime import datetime
 from dotenv import load_dotenv
 
+# Веб-сервер для UptimeRobot
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is alive!"
+
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+# Запускаем веб-сервер в отдельном потоке
+keep_alive()
+
+# Дальше твой обычный код бота
 load_dotenv()
 
 class StaffBot(discord.Client):
@@ -24,12 +44,14 @@ class StaffBot(discord.Client):
             print(f'❌ Error syncing commands: {e}')
 
     async def send_to_employee_dm(self, employee: discord.Member, embed: discord.Embed):
+        """Отправляет embed в личные сообщения работнику"""
         try:
             await employee.send(embed=embed)
         except discord.Forbidden:
             print(f"Не удалось отправить сообщение {employee.name} - закрытые ЛС")
 
     async def auto_dismiss_employee(self, interaction: discord.Interaction, employee: discord.Member):
+        """Автоматическое увольнение при достижении 3 выговоров"""
         start_date = employee.joined_at.strftime("%d.%m.%Y")
         embed = discord.Embed(
             title="🚪 Автоматическое увольнение работника", 
@@ -46,9 +68,10 @@ class StaffBot(discord.Client):
 
     async def setup_hook(self):
         async def is_guild(interaction: discord.Interaction) -> bool:
+            """Проверка что команда используется на сервере"""
             if interaction.guild is None:
                 await interaction.response.send_message(
-                    "❌ Команды можно использовать только на сервере",
+                    "❌ Команды можно использовать только на сервере!",
                     ephemeral=True
                 )
                 return False
@@ -75,11 +98,12 @@ class StaffBot(discord.Client):
             current_warnings = self.warnings[employee.id]
             
             if current_warnings >= MAX_WARNINGS:
-                embed = discord.Embed(title="⚠️ Выговор работника", color=0xff0000)
+                embed = discord.Embed(title="⚖️ Выговор работника", color=0xff0000)
                 embed.add_field(name="Работник", value=employee.mention, inline=True)
                 embed.add_field(name="Причина", value=reason, inline=False)
                 embed.add_field(name="Дата", value=datetime.now().strftime("%d.%m.%Y"), inline=True)
                 embed.add_field(name="Выговоры", value=f"{current_warnings}/{MAX_WARNINGS}", inline=True)
+                embed.set_footer(text=f"Выдан: {interaction.user.display_name}")
                 
                 await interaction.response.send_message(embed=embed)
                 await self.send_to_employee_dm(employee, embed)
@@ -88,16 +112,17 @@ class StaffBot(discord.Client):
                 await self.auto_dismiss_employee(interaction, employee)
                 return
             
-            embed = discord.Embed(title="⚠️ Выговор работника", color=0xff0000)
+            embed = discord.Embed(title="⚖️ Выговор работника", color=0xff0000)
             embed.add_field(name="Работник", value=employee.mention, inline=True)
             embed.add_field(name="Причина", value=reason, inline=False)
             embed.add_field(name="Дата", value=datetime.now().strftime("%d.%m.%Y"), inline=True)
             embed.add_field(name="Выговоры", value=f"{current_warnings}/{MAX_WARNINGS}", inline=True)
+            embed.set_footer(text=f"Выдан: {interaction.user.display_name}")
             
             await interaction.response.send_message(embed=embed)
             await self.send_to_employee_dm(employee, embed)
 
-        @self.tree.command(name="снять", description="Снимает выговор у работника")
+        @self.tree.command(name="снять_выговор", description="Снимает выговор у работника")
         @app_commands.describe(employee="Выберите работника", amount="Количество выговоров для снятия", reason="Причина снятия")
         async def remove_warn(interaction: discord.Interaction, employee: discord.Member, amount: int = 1, reason: str = "Не указана"):
             if not await is_guild(interaction):
@@ -129,6 +154,37 @@ class StaffBot(discord.Client):
             embed.add_field(name="Причина снятия", value=reason, inline=False)
             embed.add_field(name="Дата", value=datetime.now().strftime("%d.%m.%Y"), inline=True)
             embed.set_footer(text=f"Снял: {interaction.user.display_name}")
+            
+            await interaction.response.send_message(embed=embed)
+            await self.send_to_employee_dm(employee, embed)
+
+        @self.tree.command(name="удалить_выговор", description="Удаляет все выговоры у работника")
+        @app_commands.describe(employee="Выберите работника", reason="Причина удаления")
+        async def delete_warn(interaction: discord.Interaction, employee: discord.Member, reason: str = "Не указана"):
+            if not await is_guild(interaction):
+                return
+                
+            allowed_roles_ids = [1434201626062880838]
+            user_roles = [role.id for role in interaction.user.roles]
+            
+            if not any(role in allowed_roles_ids for role in user_roles):
+                await interaction.response.send_message("❌ Недостаточно прав", ephemeral=True)
+                return
+            
+            if employee.id not in self.warnings or self.warnings[employee.id] <= 0:
+                await interaction.response.send_message("❌ У этого работника нет выговоров", ephemeral=True)
+                return
+            
+            old_count = self.warnings[employee.id]
+            del self.warnings[employee.id]
+            
+            embed = discord.Embed(title="🗑️ Удаление всех выговоров", color=0x00ff00)
+            embed.add_field(name="Работник", value=employee.mention, inline=True)
+            embed.add_field(name="Удалено выговоров", value=str(old_count), inline=True)
+            embed.add_field(name="Текущее количество", value="0/3", inline=True)
+            embed.add_field(name="Причина удаления", value=reason, inline=False)
+            embed.add_field(name="Дата", value=datetime.now().strftime("%d.%m.%Y"), inline=True)
+            embed.set_footer(text=f"Удалил: {interaction.user.display_name}")
             
             await interaction.response.send_message(embed=embed)
             await self.send_to_employee_dm(employee, embed)
@@ -211,5 +267,14 @@ class StaffBot(discord.Client):
                 return
             await interaction.response.send_message("✅ Бот работает")
 
+        @self.tree.command(name="синхронизация", description="Принудительная синхронизация команд")
+        async def sync(interaction: discord.Interaction):
+            if interaction.user.guild_permissions.administrator:
+                await interaction.response.defer()
+                synced = await self.tree.sync()
+                await interaction.followup.send(f"✅ Синхронизировано {len(synced)} команд")
+            else:
+                await interaction.response.send_message("❌ Недостаточно прав", ephemeral=True)
+
 bot = StaffBot()
-bot.run('')
+bot.run(os.getenv('TOKEN'))
