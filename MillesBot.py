@@ -6,7 +6,6 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 
-# Веб-сервер для UptimeRobot
 app = Flask('')
 
 @app.route('/')
@@ -20,10 +19,8 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
-# Запускаем веб-сервер в отдельном потоке
 keep_alive()
 
-# Дальше твой обычный код бота
 load_dotenv()
 
 class StaffBot(discord.Client):
@@ -44,14 +41,12 @@ class StaffBot(discord.Client):
             print(f'❌ Error syncing commands: {e}')
 
     async def send_to_employee_dm(self, employee: discord.Member, embed: discord.Embed):
-        """Отправляет embed в личные сообщения работнику"""
         try:
             await employee.send(embed=embed)
         except discord.Forbidden:
             print(f"Не удалось отправить сообщение {employee.name} - закрытые ЛС")
 
     async def auto_dismiss_employee(self, interaction: discord.Interaction, employee: discord.Member):
-        """Автоматическое увольнение при достижении 3 выговоров"""
         start_date = employee.joined_at.strftime("%d.%m.%Y")
         embed = discord.Embed(
             title="🚪 Автоматическое увольнение работника", 
@@ -103,7 +98,6 @@ class StaffBot(discord.Client):
                 embed.add_field(name="Причина", value=reason, inline=False)
                 embed.add_field(name="Дата", value=datetime.now().strftime("%d.%m.%Y"), inline=True)
                 embed.add_field(name="Выговоры", value=f"{current_warnings}/{MAX_WARNINGS}", inline=True)
-                embed.set_footer(text=f"Выдан: {interaction.user.display_name}")
                 
                 await interaction.response.send_message(embed=embed)
                 await self.send_to_employee_dm(employee, embed)
@@ -117,7 +111,6 @@ class StaffBot(discord.Client):
             embed.add_field(name="Причина", value=reason, inline=False)
             embed.add_field(name="Дата", value=datetime.now().strftime("%d.%m.%Y"), inline=True)
             embed.add_field(name="Выговоры", value=f"{current_warnings}/{MAX_WARNINGS}", inline=True)
-            embed.set_footer(text=f"Выдан: {interaction.user.display_name}")
             
             await interaction.response.send_message(embed=embed)
             await self.send_to_employee_dm(employee, embed)
