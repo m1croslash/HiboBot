@@ -77,7 +77,7 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
                 
-            allowed_roles_ids = [1434201626062880838]
+            allowed_roles_ids = [1200579581128749115, 1402693590655963156, 1200579581149712415, 1200579581128749112, 1200579581128749113]
             user_roles = [role.id for role in interaction.user.roles]
             
             if not any(role in allowed_roles_ids for role in user_roles) and interaction.user.id != employee.id:
@@ -120,7 +120,7 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
                 
-            allowed_roles_ids = [1434201626062880838]
+            allowed_roles_ids = [1200579581128749115, 1402693590655963156, 1200579581149712415, 1200579581128749112, 1200579581128749113]
             user_roles = [role.id for role in interaction.user.roles]
             
             if not any(role in allowed_roles_ids for role in user_roles):
@@ -155,7 +155,7 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
                 
-            allowed_roles_ids = [1434201626062880838]
+            allowed_roles_ids = [1200579581128749115, 1402693590655963156, 1200579581149712415, 1200579581128749112, 1200579581128749113]
             user_roles = [role.id for role in interaction.user.roles]
             
             if not any(role in allowed_roles_ids for role in user_roles):
@@ -178,7 +178,7 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
                 
-            allowed_roles_ids = [1434201626062880838]
+            allowed_roles_ids = [1200579581128749115, 1402693590655963156, 1200579581149712415, 1200579581128749112, 1200579581128749113]
             user_roles = [role.id for role in interaction.user.roles]
             
             if not any(role in allowed_roles_ids for role in user_roles):
@@ -204,7 +204,7 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
                 
-            allowed_roles_ids = [1434201626062880838]
+            allowed_roles_ids = [1200579581128749115, 1402693590655963156, 1200579581149712415, 1200579581128749112, 1200579581128749113]
             user_roles = [role.id for role in interaction.user.roles]
 
             if not any(role in allowed_roles_ids for role in user_roles):
