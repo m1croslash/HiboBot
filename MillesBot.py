@@ -1,4 +1,3 @@
-from threading import Thread
 import discord
 from discord import app_commands
 import os
