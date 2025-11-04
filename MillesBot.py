@@ -1,4 +1,3 @@
-from flask import Flask
 from threading import Thread
 import discord
 from discord import app_commands
@@ -6,21 +5,6 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 import json
-
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Bot is alive!"
-
-def run():
-    app.run(host='0.0.0.0', port=8080)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-keep_alive()
 
 load_dotenv()
 
@@ -32,7 +16,6 @@ class StaffDatabase:
     def load_data(self):
         try:
             if not os.path.exists(self.filename) or os.path.getsize(self.filename) == 0:
-                # Создаем базовую структуру данных
                 base_data = {"employees": {}, "warnings": {}}
                 with open(self.filename, 'w', encoding='utf-8') as f:
                     json.dump(base_data, f, ensure_ascii=False, indent=2)
@@ -40,7 +23,7 @@ class StaffDatabase:
             
             with open(self.filename, 'r', encoding='utf-8') as f:
                 content = f.read().strip()
-                if not content:  # Если файл пустой
+                if not content:  
                     base_data = {"employees": {}, "warnings": {}}
                     with open(self.filename, 'w', encoding='utf-8') as f_write:
                         json.dump(base_data, f_write, ensure_ascii=False, indent=2)
@@ -51,7 +34,6 @@ class StaffDatabase:
                 
         except (json.JSONDecodeError, Exception) as e:
             print(f"❌ Ошибка загрузки данных: {e}. Создаем новую базу данных.")
-            # Создаем новую базу данных при ошибке
             base_data = {"employees": {}, "warnings": {}}
             with open(self.filename, 'w', encoding='utf-8') as f:
                 json.dump(base_data, f, ensure_ascii=False, indent=2)
@@ -144,7 +126,6 @@ class StaffBot(discord.Client):
         
         self.database.remove_employee(employee.id)
         self.database.remove_warnings(employee.id)
-        #удаления роли
         role_ids = [1200579581111959620]
         for role_id in role_ids:
             role = employee.guild.get_role(role_id)
@@ -184,7 +165,6 @@ class StaffBot(discord.Client):
             
             join_date = datetime.now().strftime("%d.%m.%Y")
             self.database.add_employee(employee.id, employee.display_name, position, join_date)
-            #Выдача роли работнику
             
             role_ids = [1200579581111959620]
             for role_id in role_ids:
