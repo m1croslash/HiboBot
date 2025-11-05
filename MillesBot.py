@@ -22,7 +22,7 @@ class StaffDatabase:
             
             with open(self.filename, 'r', encoding='utf-8') as f:
                 content = f.read().strip()
-                if not content:  
+                if not content: 
                     base_data = {"employees": {}, "warnings": {}}
                     with open(self.filename, 'w', encoding='utf-8') as f_write:
                         json.dump(base_data, f_write, ensure_ascii=False, indent=2)
@@ -91,7 +91,7 @@ class StaffBot(discord.Client):
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
         self.database = StaffDatabase()
-    
+        
     async def on_ready(self):
         print(f'✅ {self.user} ready to work!')
         try:
@@ -125,6 +125,7 @@ class StaffBot(discord.Client):
         
         self.database.remove_employee(employee.id)
         self.database.remove_warnings(employee.id)
+        #удаления роли
         role_ids = [1200579581111959620]
         for role_id in role_ids:
             role = employee.guild.get_role(role_id)
@@ -164,7 +165,7 @@ class StaffBot(discord.Client):
             
             join_date = datetime.now().strftime("%d.%m.%Y")
             self.database.add_employee(employee.id, employee.display_name, position, join_date)
-            
+
             role_ids = [1200579581111959620]
             for role_id in role_ids:
                 role = employee.guild.get_role(role_id)
@@ -255,6 +256,11 @@ class StaffBot(discord.Client):
             
             current_warnings = self.database.get_warnings(employee.id) + 1
             self.database.set_warnings(employee.id, current_warnings)
+            
+            if current_warnings == +1:
+                role = employee.guild.get_role(1398751720665780324)
+                if role:
+                    await employee.add_roles(role)
             
             MAX_WARNINGS = 3
             
