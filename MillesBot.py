@@ -432,9 +432,9 @@ class StaffBot(discord.Client):
 
         @self.tree.command(name="тест", description="Проверка бота")
         async def test(interaction: discord.Interaction):
+            await interaction.response.defer(ephemeral=True)
             if not await is_guild(interaction):
                 return
-            await interaction.response.defer()
             await interaction.followup.send("✅ Бот работает")    
 
 bot = StaffBot()
