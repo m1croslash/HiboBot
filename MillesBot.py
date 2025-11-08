@@ -432,8 +432,8 @@ class StaffBot(discord.Client):
 
         @self.tree.command(name="тест", description="Проверка бота")
         async def test(interaction: discord.Interaction):
-            await interaction.response.defer(ephemeral=True)
-            if not await is_guild(interaction):
+            if interaction.guild is None:
+                await interaction.response.send_message("❌ Команды можно использовать только на сервере", ephemeral=True)
                 return
             await interaction.followup.send("✅ Бот работает")    
 
