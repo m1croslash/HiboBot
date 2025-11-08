@@ -4,15 +4,15 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 import json
-import threading
 import time
+import asyncio
 
 load_dotenv()
 
 class StaffDatabase:
     def __init__(self, filename='staff_data.json'):
         self.filename = filename
-        self.lock = threading.Lock()
+        self.lock = asyncio.Lock()
         self.data = self.load_data()
 
     def sanitize_input(self, text: str, max_length: int = 200) -> str:
@@ -61,23 +61,30 @@ class StaffDatabase:
             print(f"❌ Ошибка при загрузке: {e}")
             return base_data
 
-    def save_data(self):
+    def _sync_save(self, tmp, data):
+        try:
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, self.filename)
+        except Exception as e:
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except:
+                    pass
+            print(f"❌ Ошибка записи файла: {e}")
+
+    async def save_data(self):
         tmp = f"{self.filename}.tmp"
         try:
-            with self.lock:
-                with open(tmp, 'w', encoding='utf-8') as f:
-                    json.dump(self.data, f, ensure_ascii=False, indent=2)
-                os.replace(tmp, self.filename)
+            data_to_save = self.data.copy()
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._sync_save, tmp, data_to_save)
         except Exception as e:
             print(f"❌ Ошибка сохранения данных: {e}")
-            try:
-                if os.path.exists(tmp):
-                    os.remove(tmp)
-            except:
-                pass
-    
-    def add_employee(self, user_id, name, position, join_date):
-        with self.lock:
+
+    async def add_employee(self, user_id, name, position, join_date):
+        async with self.lock:
             safe_name = self.sanitize_input(name)
             safe_position = self.sanitize_input(position)
             safe_join_date = self.sanitize_input(join_date)
@@ -88,37 +95,40 @@ class StaffDatabase:
                 "join_date": safe_join_date,
                 "active": True
             }
-            self.save_data()
+        await self.save_data()
 
-    
-    def update_employee(self, user_id, **kwargs):
-        if str(user_id) in self.data["employees"]:
-            for key, value in kwargs.items():
-                self.data["employees"][str(user_id)][key] = value
-            self.save_data()
-    
-    def remove_employee(self, user_id):
-        if str(user_id) in self.data["employees"]:
-            self.data["employees"][str(user_id)]["active"] = False
-            self.save_data()
-    
+    async def update_employee(self, user_id, **kwargs):
+        async with self.lock:
+            if str(user_id) in self.data["employees"]:
+                for key, value in kwargs.items():
+                    self.data["employees"][str(user_id)][key] = value
+        await self.save_data()
+
+    async def remove_employee(self, user_id):
+        async with self.lock:
+            if str(user_id) in self.data["employees"]:
+                self.data["employees"][str(user_id)]["active"] = False
+        await self.save_data()
+
     def get_employee(self, user_id):
         return self.data["employees"].get(str(user_id))
-    
+
     def get_all_employees(self):
         return {uid: data for uid, data in self.data["employees"].items() if data.get("active", True)}
-    
-    def set_warnings(self, user_id, count):
-        self.data["warnings"][str(user_id)] = count
-        self.save_data()
-    
+
+    async def set_warnings(self, user_id, count):
+        async with self.lock:
+            self.data["warnings"][str(user_id)] = count
+        await self.save_data()
+
     def get_warnings(self, user_id):
         return self.data["warnings"].get(str(user_id), 0)
-    
-    def remove_warnings(self, user_id):
-        if str(user_id) in self.data["warnings"]:
-            del self.data["warnings"][str(user_id)]
-            self.save_data()
+
+    async def remove_warnings(self, user_id):
+        async with self.lock:
+            if str(user_id) in self.data["warnings"]:
+                del self.data["warnings"][str(user_id)]
+        await self.save_data()
 
 class StaffBot(discord.Client):
     def __init__(self):
@@ -128,14 +138,15 @@ class StaffBot(discord.Client):
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
         self.database = StaffDatabase()
-        
+        self.last_command_use = {}
+
     async def on_ready(self):
         print(f'✅ {self.user} ready to work!')
         try:
             synced = await self.tree.sync()
-            print(f'Commands synced: {len(synced)} (from setup_hook)')
+            print(f'Commands synced: {len(synced)}')
         except Exception as e:
-            print(f'❌ Error syncing commands in setup_hook: {e}')
+            print(f'❌ Error syncing commands: {e}')
 
     async def send_to_employee_dm(self, employee: discord.Member, embed: discord.Embed):
         try:
@@ -160,9 +171,9 @@ class StaffBot(discord.Client):
         await interaction.followup.send(embed=embed)
         await self.send_to_employee_dm(employee, embed)
         
-        self.database.remove_employee(employee.id)
-        self.database.remove_warnings(employee.id)
-        #удаления роли
+        await self.database.remove_employee(employee.id)
+        await self.database.remove_warnings(employee.id)
+        
         role_ids = [1200579581111959620]
         for role_id in role_ids:
             role = employee.guild.get_role(role_id)
@@ -172,7 +183,24 @@ class StaffBot(discord.Client):
                 except:
                     pass
 
+    def check_cooldown(self, user_id: int, command: str, cooldown: int = 5) -> bool:
+        key = f"{user_id}_{command}"
+        current_time = time.time()
+        
+        if key in self.last_command_use:
+            if current_time - self.last_command_use[key] < cooldown:
+                return False
+        
+        self.last_command_use[key] = current_time
+        return True
+
     async def setup_hook(self):
+        @self.tree.error
+        async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+            if isinstance(error, app_commands.CommandInvokeError) and "already been acknowledged" in str(error):
+                return
+            print(f"❌ Ошибка команды: {error}")
+
         async def is_guild(interaction: discord.Interaction) -> bool:
             if interaction.guild is None:
                 await interaction.response.send_message(
@@ -188,7 +216,17 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
             
-            await interaction.response.defer()
+            if not self.check_cooldown(interaction.user.id, "add_employee", 5):
+                await interaction.response.send_message("❌ Подождите 5 секунд перед следующей командой", ephemeral=True)
+                return
+            
+            try:
+                await interaction.response.defer()
+            except discord.errors.HTTPException as e:
+                if "already been acknowledged" in str(e):
+                    pass
+                else:
+                    raise
                 
             allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
@@ -205,7 +243,7 @@ class StaffBot(discord.Client):
                 return
             
             join_date = datetime.now().strftime("%d.%m.%Y")
-            self.database.add_employee(employee.id, employee.display_name, position, join_date)
+            await self.database.add_employee(employee.id, employee.display_name, position, join_date)
 
             role_ids = [1200579581111959620]
             for role_id in role_ids:
@@ -229,8 +267,18 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
             
-            await interaction.response.defer()
-                
+            if not self.check_cooldown(interaction.user.id, "staff_list", 5):
+                await interaction.response.send_message("❌ Подождите 5 секунд перед следующей командой", ephemeral=True)
+                return
+            
+            try:
+                await interaction.response.defer()
+            except discord.errors.HTTPException as e:
+                if "already been acknowledged" in str(e):
+                    pass
+                else:
+                    raise
+
             employees = self.database.get_all_employees()
             
             if not employees:
@@ -263,11 +311,15 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
             
-            await interaction.response.defer()
+            if not self.check_cooldown(interaction.user.id, "employee_info", 5):
+                await interaction.response.send_message("❌ Подождите 5 секунд перед следующей командой", ephemeral=True)
+                return
+            
+            await interaction.response.send_message("⏳ Загружаем информацию...", ephemeral=True)
                 
             employee_data = self.database.get_employee(employee.id)
             if not employee_data or not employee_data.get("active", True):
-                await interaction.followup.send("❌ Этот работник не найден в базе данных", ephemeral=True)
+                await interaction.edit_original_response(content="❌ Этот работник не найден в базе данных")
                 return
             
             warnings = self.database.get_warnings(employee.id)
@@ -278,7 +330,7 @@ class StaffBot(discord.Client):
             embed.add_field(name="Дата приема", value=employee_data["join_date"], inline=True)
             embed.add_field(name="Выговоры", value=f"{warnings}/3", inline=True)
             
-            await interaction.followup.send(embed=embed)
+            await interaction.edit_original_response(content=None, embed=embed)
 
         @self.tree.command(name="выговор", description="Выдает выговор работнику")
         @app_commands.describe(employee="Выберите работника", reason="Причина для выговора")
@@ -286,12 +338,26 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
             
-            await interaction.response.defer()
+            if not self.check_cooldown(interaction.user.id, "warn", 10):
+                await interaction.response.send_message("❌ Подождите 10 секунд перед следующим выговором", ephemeral=True)
+                return
+            
+            try:
+                await interaction.response.defer()
+            except discord.errors.HTTPException as e:
+                if "already been acknowledged" in str(e):
+                    pass
+                else:
+                    raise
                 
-            allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112, 1200579581111959620]
+            allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
             if employee.id == interaction.user.id:
                 await interaction.followup.send("❌ Нельзя выдать выговор самому себе!", ephemeral=True)
+                return
+            
+            if len(reason) > 500:
+                await interaction.followup.send("❌ Причина слишком длинная (максимум 500 символов)", ephemeral=True)
                 return
             
             has_allowed = any(r in allowed_roles_ids for r in user_roles)
@@ -306,7 +372,7 @@ class StaffBot(discord.Client):
                 return
             
             current_warnings = self.database.get_warnings(employee.id) + 1
-            self.database.set_warnings(employee.id, current_warnings)
+            await self.database.set_warnings(employee.id, current_warnings)
             
             if current_warnings == 1:
                 role = employee.guild.get_role(1398751720665780324)
@@ -325,7 +391,7 @@ class StaffBot(discord.Client):
                 await interaction.followup.send(embed=embed)
                 await self.send_to_employee_dm(employee, embed)
                 
-                self.database.remove_warnings(employee.id)
+                await self.database.remove_warnings(employee.id)
                 await self.auto_dismiss_employee(interaction, employee)
                 return
             
@@ -344,7 +410,17 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
             
-            await interaction.response.defer()
+            if not self.check_cooldown(interaction.user.id, "remove_warn", 5):
+                await interaction.response.send_message("❌ Подождите 5 секунд перед следующей командой", ephemeral=True)
+                return
+            
+            try:
+                await interaction.response.defer()
+            except discord.errors.HTTPException as e:
+                if "already been acknowledged" in str(e):
+                    pass
+                else:
+                    raise
                 
             allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
@@ -361,7 +437,7 @@ class StaffBot(discord.Client):
                 return
             
             new_warnings = max(0, current_warnings - amount)
-            self.database.set_warnings(employee.id, new_warnings)
+            await self.database.set_warnings(employee.id, new_warnings)
             
             if new_warnings == 0:
                 warnings_text = "0/3"
@@ -384,7 +460,17 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
             
-            await interaction.response.defer()
+            if not self.check_cooldown(interaction.user.id, "salary", 5):
+                await interaction.response.send_message("❌ Подождите 5 секунд перед следующей командой", ephemeral=True)
+                return
+            
+            try:
+                await interaction.response.defer()
+            except discord.errors.HTTPException as e:
+                if "already been acknowledged" in str(e):
+                    pass
+                else:
+                    raise
                 
             allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
@@ -411,7 +497,17 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
             
-            await interaction.response.defer()
+            if not self.check_cooldown(interaction.user.id, "dismiss", 10):
+                await interaction.response.send_message("❌ Подождите 10 секунд перед следующей командой", ephemeral=True)
+                return
+            
+            try:
+                await interaction.response.defer()
+            except discord.errors.HTTPException as e:
+                if "already been acknowledged" in str(e):
+                    pass
+                else:
+                    raise
                 
             allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
@@ -425,8 +521,8 @@ class StaffBot(discord.Client):
             employee_data = self.database.get_employee(employee.id)
             start_date = employee_data.get("join_date", employee.joined_at.strftime("%d.%m.%Y")) if employee_data else employee.joined_at.strftime("%d.%m.%Y")
             
-            self.database.remove_employee(employee.id)
-            self.database.remove_warnings(employee.id)
+            await self.database.remove_employee(employee.id)
+            await self.database.remove_warnings(employee.id)
             
             embed = discord.Embed(title="🚪 Увольнение работника", color=0xff6b00)
             embed.add_field(name="Работник", value=employee.mention, inline=True)
@@ -452,8 +548,18 @@ class StaffBot(discord.Client):
             if not await is_guild(interaction):
                 return
             
-            await interaction.response.defer()
-                
+            if not self.check_cooldown(interaction.user.id, "vacation", 5):
+                await interaction.response.send_message("❌ Подождите 5 секунд перед следующей командой", ephemeral=True)
+                return
+            
+            try:
+                await interaction.response.defer()
+            except Exception as e:
+                if "already been acknowledged" in str(e):
+                    pass
+                else:
+                    raise
+
             allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
 
@@ -479,7 +585,7 @@ class StaffBot(discord.Client):
                 await interaction.response.send_message("❌ Команды можно использовать только на сервере", ephemeral=True)
                 return
             
-            await interaction.followup.send("✅ Бот работает")
+            await interaction.response.send_message("✅ Бот работает", ephemeral=True)
 
 token = os.getenv('TOKEN')
 if not token:
