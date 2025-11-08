@@ -4,63 +4,92 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 import json
+import threading
+import time
 
 load_dotenv()
 
 class StaffDatabase:
     def __init__(self, filename='staff_data.json'):
         self.filename = filename
+        self.lock = threading.Lock()
         self.data = self.load_data()
-    
+
+    def sanitize_input(self, text: str, max_length: int = 200) -> str:
+        if not isinstance(text, str):
+            text = str(text)
+        text = text.replace('\n', ' ').replace('\r', '').strip()
+        text = text[:max_length]
+        return text
+
     def load_data(self):
-        try:
-            if not os.path.exists(self.filename) or os.path.getsize(self.filename) == 0:
-                base_data = {"employees": {}, "warnings": {}}
+        base_data = {"employees": {}, "warnings": {}}
+        if not os.path.exists(self.filename) or os.path.getsize(self.filename) == 0:
+            try:
                 with open(self.filename, 'w', encoding='utf-8') as f:
                     json.dump(base_data, f, ensure_ascii=False, indent=2)
-                return base_data
-            
-            with open(self.filename, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-                if not content: 
-                    base_data = {"employees": {}, "warnings": {}}
-                    with open(self.filename, 'w', encoding='utf-8') as f_write:
-                        json.dump(base_data, f_write, ensure_ascii=False, indent=2)
-                    return base_data
-                
-                f.seek(0)
-                return json.load(f)
-                
-        except (json.JSONDecodeError, Exception) as e:
-            print(f"❌ Ошибка загрузки данных: {e}. Создаем резервную копию и новую базу.")
-    
-            backup_name = f"staff_data_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            try:
-                os.rename(self.filename, backup_name)
-                print(f"💾 Создана резервная копия: {backup_name}")
-            except:
-                pass
-        
-            base_data = {"employees": {}, "warnings": {}}
-            with open(self.filename, 'w', encoding='utf-8') as f:
-                json.dump(base_data, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                print(f"❌ Ошибка создания файла: {e}")
             return base_data
-    
-    def save_data(self):
+
         try:
-            with open(self.filename, 'w', encoding='utf-8') as f:
-                json.dump(self.data, f, ensure_ascii=False, indent=2)
+            with open(self.filename, 'r', encoding='utf-8') as f:
+                content = f.read()
+                if not content.strip():
+                    with open(self.filename, 'w', encoding='utf-8') as fw:
+                        json.dump(base_data, fw, ensure_ascii=False, indent=2)
+                    return base_data
+                return json.loads(content)
+        except json.JSONDecodeError as e:
+            print(f"❌ Ошибка JSON: {e}. Создаю бэкап и новый файл.")
+            try:
+                backup_name = f"staff_data_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                try:
+                    os.rename(self.filename, backup_name)
+                    print(f"💾 Резервная копия создана: {backup_name}")
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            try:
+                with open(self.filename, 'w', encoding='utf-8') as f:
+                    json.dump(base_data, f, ensure_ascii=False, indent=2)
+            except Exception as e2:
+                print(f"❌ Не удалось создать новый файл: {e2}")
+            return base_data
+        except Exception as e:
+            print(f"❌ Ошибка при загрузке: {e}")
+            return base_data
+
+    def save_data(self):
+        tmp = f"{self.filename}.tmp"
+        try:
+            with self.lock:
+                with open(tmp, 'w', encoding='utf-8') as f:
+                    json.dump(self.data, f, ensure_ascii=False, indent=2)
+                os.replace(tmp, self.filename)
         except Exception as e:
             print(f"❌ Ошибка сохранения данных: {e}")
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except:
+                pass
     
     def add_employee(self, user_id, name, position, join_date):
-        self.data["employees"][str(user_id)] = {
-            "name": name,
-            "position": position,
-            "join_date": join_date,
-            "active": True
-        }
-        self.save_data()
+        with self.lock:
+            safe_name = self.sanitize_input(name)
+            safe_position = self.sanitize_input(position)
+            safe_join_date = self.sanitize_input(join_date)
+
+            self.data["employees"][str(user_id)] = {
+                "name": safe_name,
+                "position": safe_position,
+                "join_date": safe_join_date,
+                "active": True
+            }
+            self.save_data()
+
     
     def update_employee(self, user_id, **kwargs):
         if str(user_id) in self.data["employees"]:
@@ -104,9 +133,9 @@ class StaffBot(discord.Client):
         print(f'✅ {self.user} ready to work!')
         try:
             synced = await self.tree.sync()
-            print(f'🔧 Commands synced: {len(synced)}')
+            print(f'Commands synced: {len(synced)} (from setup_hook)')
         except Exception as e:
-            print(f'❌ Error syncing commands: {e}')
+            print(f'❌ Error syncing commands in setup_hook: {e}')
 
     async def send_to_employee_dm(self, employee: discord.Member, embed: discord.Embed):
         try:
@@ -164,10 +193,12 @@ class StaffBot(discord.Client):
             allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
             
-            if not any(role in allowed_roles_ids for role in user_roles):
+            has_allowed = any(r in allowed_roles_ids for r in user_roles)
+            is_admin = getattr(interaction.user, "guild_permissions", None) and interaction.user.guild_permissions.administrator
+            if not (has_allowed or is_admin):
                 await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
                 return
-            
+                  
             existing_employee = self.database.get_employee(employee.id)
             if existing_employee and existing_employee.get("active", True):
                 await interaction.followup.send("❌ Этот работник уже есть в базе данных", ephemeral=True)
@@ -235,7 +266,6 @@ class StaffBot(discord.Client):
             await interaction.response.defer()
                 
             employee_data = self.database.get_employee(employee.id)
-            
             if not employee_data or not employee_data.get("active", True):
                 await interaction.followup.send("❌ Этот работник не найден в базе данных", ephemeral=True)
                 return
@@ -260,8 +290,13 @@ class StaffBot(discord.Client):
                 
             allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112, 1200579581111959620]
             user_roles = [role.id for role in interaction.user.roles]
+            if employee.id == interaction.user.id:
+                await interaction.followup.send("❌ Нельзя выдать выговор самому себе!", ephemeral=True)
+                return
             
-            if not any(role in allowed_roles_ids for role in user_roles) and interaction.user.id != employee.id:
+            has_allowed = any(r in allowed_roles_ids for r in user_roles)
+            is_admin = getattr(interaction.user, "guild_permissions", None) and interaction.user.guild_permissions.administrator
+            if not (has_allowed or is_admin):
                 await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
                 return
             
@@ -314,7 +349,9 @@ class StaffBot(discord.Client):
             allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
             
-            if not any(role in allowed_roles_ids for role in user_roles):
+            has_allowed = any(r in allowed_roles_ids for r in user_roles)
+            is_admin = getattr(interaction.user, "guild_permissions", None) and interaction.user.guild_permissions.administrator
+            if not (has_allowed or is_admin):
                 await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
                 return
             
@@ -352,10 +389,12 @@ class StaffBot(discord.Client):
             allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
             
-            if not any(role in allowed_roles_ids for role in user_roles):
+            has_allowed = any(r in allowed_roles_ids for r in user_roles)
+            is_admin = getattr(interaction.user, "guild_permissions", None) and interaction.user.guild_permissions.administrator
+            if not (has_allowed or is_admin):
                 await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
                 return
-            
+       
             payment_date = date or datetime.now().strftime("%d.%m.%Y")
             embed = discord.Embed(title="💰 Выплата", color=0x00ff00)
             embed.add_field(name="Работник", value=employee.mention, inline=True)
@@ -377,10 +416,12 @@ class StaffBot(discord.Client):
             allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
             
-            if not any(role in allowed_roles_ids for role in user_roles):
+            has_allowed = any(r in allowed_roles_ids for r in user_roles)
+            is_admin = getattr(interaction.user, "guild_permissions", None) and interaction.user.guild_permissions.administrator
+            if not (has_allowed or is_admin):
                 await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
                 return
-            
+  
             employee_data = self.database.get_employee(employee.id)
             start_date = employee_data.get("join_date", employee.joined_at.strftime("%d.%m.%Y")) if employee_data else employee.joined_at.strftime("%d.%m.%Y")
             
@@ -416,7 +457,9 @@ class StaffBot(discord.Client):
             allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
 
-            if not any(role in allowed_roles_ids for role in user_roles):
+            has_allowed = any(r in allowed_roles_ids for r in user_roles)
+            is_admin = getattr(interaction.user, "guild_permissions", None) and interaction.user.guild_permissions.administrator
+            if not (has_allowed or is_admin):
                 await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
                 return
 
@@ -435,7 +478,11 @@ class StaffBot(discord.Client):
             if interaction.guild is None:
                 await interaction.response.send_message("❌ Команды можно использовать только на сервере", ephemeral=True)
                 return
-            await interaction.followup.send("✅ Бот работает")    
+            
+            await interaction.followup.send("✅ Бот работает")
 
+token = os.getenv('TOKEN')
+if not token:
+    raise RuntimeError("TOKEN env var is not set. Set TOKEN in env before running the bot")
 bot = StaffBot()
-bot.run(os.getenv('TOKEN'))
+bot.run(token)
