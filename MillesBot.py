@@ -269,28 +269,23 @@ class StaffBot(discord.Client):
         async def staff_list(interaction: discord.Interaction):
             if not await is_guild(interaction):
                 return
-    
+
             try:
                 await interaction.response.defer()
-            except:
+            except Exception as e:
+                print(f"❌ Ошибка при дефере: {e}")
                 return
-    
+
             employees = self.database.get_all_employees()
             if not employees:
-                try:
-                    await interaction.followup.send("📂 База работников пуста")
-                except:
-                    pass
+                await interaction.followup.send("📂 База работников пуста")
                 return
-    
+
             embed = discord.Embed(title="📂 База работников", color=0x00ff00)
 
             for user_id, data in employees.items():
                 member = interaction.guild.get_member(int(user_id))
-                if member:
-                    mention = member.mention
-                else:
-                    mention = data["name"]
+                mention = member.mention if member else data["name"]
 
                 warnings = self.database.get_warnings(int(user_id))
                 warn_text = f" ({warnings} выговоров)" if warnings > 0 else ""
@@ -303,8 +298,9 @@ class StaffBot(discord.Client):
 
             try:
                 await interaction.followup.send(embed=embed)
-            except:
-                pass
+            except Exception as e:
+                print(f"❌ Ошибка при отправке embed: {e}")
+
 
         @self.tree.command(name="инфо_работник", description="Информация о работнике")
         @app_commands.describe(employee="Выберите работника")
