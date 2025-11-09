@@ -204,6 +204,20 @@ class StaffBot(discord.Client):
                 if isinstance(original, discord.HTTPException) and "already been acknowledged" in str(original):
                     return
                 print(f"❌ Критическая ошибка команды: {original}")
+                
+                try:
+                    if interaction.response.is_done():
+                        await interaction.followup.send(
+                            "❌ Произошла критическая ошибка при выполнении команды", 
+                            ephemeral=True
+                        )
+                    else:
+                        await interaction.response.send_message(
+                            "❌ Произошла критическая ошибка при выполнении команды", 
+                            ephemeral=True
+                        )
+                except:
+                    pass
             else:
                 print(f"❌ Ошибка команды: {error}")
 
@@ -213,6 +227,27 @@ class StaffBot(discord.Client):
                     "❌ Команды можно использовать только на сервере",
                     ephemeral=True
                 )
+                return False
+            return True
+
+        async def check_permissions(interaction: discord.Interaction) -> bool:
+            """Проверка прав пользователя"""
+            allowed_roles = [1200579581149712416, 1200579581149712417, 1200579581149712415, 
+                           1200579581128749114, 1200579581128749113, 1402693590655963156, 
+                           1200579581128749112]
+            user_roles = [role.id for role in interaction.user.roles]
+            
+            has_allowed = any(r in allowed_roles for r in user_roles)
+            is_admin_user = interaction.user.guild_permissions.administrator
+            
+            if not (has_allowed or is_admin_user):
+                return False
+            return True
+
+        async def check_employee_exists(interaction: discord.Interaction, employee: discord.Member) -> bool:
+            """Проверка существования работника в базе"""
+            employee_data = self.database.get_employee(employee.id)
+            if not employee_data or not employee_data.get("active", True):
                 return False
             return True
 
@@ -226,18 +261,13 @@ class StaffBot(discord.Client):
                 await interaction.response.send_message("❌ Подождите 5 секунд перед следующей командой", ephemeral=True)
                 return
             
-            try:
-                await interaction.response.defer()
-            except:
+            if not await check_permissions(interaction):
+                await interaction.response.send_message("❌ Недостаточно прав", ephemeral=True)
                 return
-                
-            allowed_roles = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
-            user_roles = [role.id for role in interaction.user.roles]
             
-            has_allowed = any(r in allowed_roles for r in user_roles)
-            is_admin_user = interaction.user.guild_permissions.administrator
-            if not (has_allowed or is_admin_user):
-                await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
+            try:
+                await interaction.response.defer(ephemeral=True)
+            except:
                 return
                   
             existing_employee = self.database.get_employee(employee.id)
@@ -254,8 +284,8 @@ class StaffBot(discord.Client):
                 if role:
                     try:
                         await employee.add_roles(role)
-                    except:
-                        pass
+                    except Exception as e:
+                        print(f"❌ Ошибка выдачи роли: {e}")
             
             embed = discord.Embed(title="✅ Работник добавлен в базу", color=0x00ff00)
             embed.add_field(name="Работник", value=employee.mention, inline=True)
@@ -268,17 +298,18 @@ class StaffBot(discord.Client):
         @self.tree.command(name="база_работников", description="Показывает список всех работников")
         async def staff_list(interaction: discord.Interaction):
             if not await is_guild(interaction):
+                await interaction.response.send_message("❌ Команды можно использовать только на сервере", ephemeral=True)
                 return
 
             try:
-                await interaction.response.defer()
+                await interaction.response.defer(ephemeral=True)
             except Exception as e:
-                print(f"❌ Ошибка при дефере: {e}")
+                await interaction.response.send_message(f"❌ Ошибка при загрузке базы данных: {str(e)}", ephemeral=True)
                 return
 
             employees = self.database.get_all_employees()
             if not employees:
-                await interaction.followup.send("📂 База работников пуста")
+                await interaction.followup.send("📂 База работников пуста", ephemeral=True)
                 return
 
             embed = discord.Embed(title="📂 База работников", color=0x00ff00)
@@ -296,11 +327,7 @@ class StaffBot(discord.Client):
                     inline=False
                 )
 
-            try:
-                await interaction.followup.send(embed=embed)
-            except Exception as e:
-                print(f"❌ Ошибка при отправке embed: {e}")
-
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
         @self.tree.command(name="инфо_работник", description="Информация о работнике")
         @app_commands.describe(employee="Выберите работника")
@@ -309,30 +336,23 @@ class StaffBot(discord.Client):
                 return
     
             try:
-                await interaction.response.defer()
+                await interaction.response.defer(ephemeral=True)
             except:
                 return
                 
-            employee_data = self.database.get_employee(employee.id)
-            if not employee_data or not employee_data.get("active", True):
-                try:
-                    await interaction.followup.send("❌ Этот работник не найден в базе данных")
-                except:
-                    pass
+            if not await check_employee_exists(interaction, employee):
+                await interaction.followup.send("❌ Этот работник не найден в базе данных", ephemeral=True)
                 return
     
             warnings = self.database.get_warnings(employee.id)
     
             embed = discord.Embed(title="📋 Информация о работнике", color=0x00ff00)
             embed.add_field(name="Имя", value=employee.display_name, inline=True)
-            embed.add_field(name="Должность", value=employee_data["position"], inline=True)
-            embed.add_field(name="Дата приема", value=employee_data["join_date"], inline=True)
+            embed.add_field(name="Должность", value=self.database.get_employee(employee.id)["position"], inline=True)
+            embed.add_field(name="Дата приема", value=self.database.get_employee(employee.id)["join_date"], inline=True)
             embed.add_field(name="Выговоры", value=f"{warnings}/3", inline=True)
     
-            try:
-                await interaction.followup.send(embed=embed)
-            except:
-                pass
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
         @self.tree.command(name="выговор", description="Выдает выговор работнику")
         @app_commands.describe(employee="Выберите работника", reason="Причина для выговора")
@@ -344,29 +364,24 @@ class StaffBot(discord.Client):
                 await interaction.response.send_message("❌ Подождите 10 секунд перед следующим выговором", ephemeral=True)
                 return
             
-            try:
-                await interaction.response.defer()
-            except:
-                return
-           
-            allowed_roles = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
-            user_roles = [role.id for role in interaction.user.roles]
             if employee.id == interaction.user.id:
-                await interaction.followup.send("❌ Нельзя выдать выговор самому себе!", ephemeral=True)
+                await interaction.response.send_message("❌ Нельзя выдать выговор самому себе!", ephemeral=True)
                 return
             
             if len(reason) > 500:
-                await interaction.followup.send("❌ Причина слишком длинная (максимум 500 символов)", ephemeral=True)
+                await interaction.response.send_message("❌ Причина слишком длинная (максимум 500 символов)", ephemeral=True)
                 return
             
-            has_allowed = any(r in allowed_roles for r in user_roles)
-            is_admin_user = interaction.user.guild_permissions.administrator
-            if not (has_allowed or is_admin_user):
-                await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
+            if not await check_permissions(interaction):
+                await interaction.response.send_message("❌ Недостаточно прав", ephemeral=True)
                 return
             
-            employee_data = self.database.get_employee(employee.id)
-            if not employee_data or not employee_data.get("active", True):
+            try:
+                await interaction.response.defer(ephemeral=True)
+            except:
+                return
+            
+            if not await check_employee_exists(interaction, employee):
                 await interaction.followup.send("❌ Этот работник не найден в базе данных", ephemeral=True)
                 return
             
@@ -376,7 +391,10 @@ class StaffBot(discord.Client):
             if current_warnings == 1:
                 role = employee.guild.get_role(1398751720665780324)
                 if role:
-                    await employee.add_roles(role)
+                    try:
+                        await employee.add_roles(role)
+                    except Exception as e:
+                        print(f"❌ Ошибка выдачи роли выговора: {e}")
             
             MAX_WARNINGS = 3
             
@@ -401,7 +419,6 @@ class StaffBot(discord.Client):
             embed.add_field(name="Выговоры", value=f"{current_warnings}/{MAX_WARNINGS}", inline=True)
             
             await interaction.followup.send(embed=embed)
-            await self.send_to_employee_dm(employee, embed)
 
         @self.tree.command(name="снять_выговор", description="Снимает выговор у работника")
         @app_commands.describe(employee="Выберите работника", amount="Количество выговоров для снятия", reason="Причина снятия")
@@ -413,18 +430,17 @@ class StaffBot(discord.Client):
                 await interaction.response.send_message("❌ Подождите 5 секунд перед следующей командой", ephemeral=True)
                 return
             
+            if not await check_permissions(interaction):
+                await interaction.response.send_message("❌ Недостаточно прав", ephemeral=True)
+                return
+            
             try:
-                await interaction.response.defer()
+                await interaction.response.defer(ephemeral=True)
             except:
                 return
-               
-            allowed_roles = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
-            user_roles = [role.id for role in interaction.user.roles]
             
-            has_allowed = any(r in allowed_roles for r in user_roles)
-            is_admin_user = interaction.user.guild_permissions.administrator
-            if not (has_allowed or is_admin_user):
-                await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
+            if not await check_employee_exists(interaction, employee):
+                await interaction.followup.send("❌ Этот работник не найден в базе данных", ephemeral=True)
                 return
             
             current_warnings = self.database.get_warnings(employee.id)
@@ -434,6 +450,14 @@ class StaffBot(discord.Client):
             
             new_warnings = max(0, current_warnings - amount)
             await self.database.set_warnings(employee.id, new_warnings)
+            
+            if new_warnings < 1:
+                role = employee.guild.get_role(1398751720665780324)
+                if role and role in employee.roles:
+                    try:
+                        await employee.remove_roles(role)
+                    except Exception as e:
+                        print(f"❌ Ошибка снятия роли выговора: {e}")
             
             if new_warnings == 0:
                 warnings_text = "0/3"
@@ -448,7 +472,6 @@ class StaffBot(discord.Client):
             embed.add_field(name="Дата", value=datetime.now().strftime("%d.%m.%Y"), inline=True)
             
             await interaction.followup.send(embed=embed)
-            await self.send_to_employee_dm(employee, embed)
 
         @self.tree.command(name="зарплата", description="Выплата")  
         @app_commands.describe(employee="Выберите работника", amount="Сумма выплаты", date="Дата выдачи")
@@ -460,18 +483,17 @@ class StaffBot(discord.Client):
                 await interaction.response.send_message("❌ Подождите 5 секунд перед следующей командой", ephemeral=True)
                 return
             
+            if not await check_permissions(interaction):
+                await interaction.response.send_message("❌ Недостаточно прав", ephemeral=True)
+                return
+            
             try:
-                await interaction.response.defer()
+                await interaction.response.defer(ephemeral=True)
             except:
                 return
-               
-            allowed_roles = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
-            user_roles = [role.id for role in interaction.user.roles]
             
-            has_allowed = any(r in allowed_roles for r in user_roles)
-            is_admin_user = interaction.user.guild_permissions.administrator
-            if not (has_allowed or is_admin_user):
-                await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
+            if not await check_employee_exists(interaction, employee):
+                await interaction.followup.send("❌ Этот работник не найден в базе данных", ephemeral=True)
                 return
        
             payment_date = date or datetime.now().strftime("%d.%m.%Y")
@@ -482,7 +504,6 @@ class StaffBot(discord.Client):
             embed.set_footer(text=f"Выдал: {interaction.user.display_name}")
             
             await interaction.followup.send(embed=embed)
-            await self.send_to_employee_dm(employee, embed)
 
         @self.tree.command(name="увольнение", description="Увольнение работника")
         @app_commands.describe(employee="Выберите работника", reason="Причина увольнения")
@@ -494,20 +515,19 @@ class StaffBot(discord.Client):
                 await interaction.response.send_message("❌ Подождите 10 секунд перед следующей командой", ephemeral=True)
                 return
             
+            if not await check_permissions(interaction):
+                await interaction.response.send_message("❌ Недостаточно прав", ephemeral=True)
+                return
+            
             try:
-                await interaction.response.defer()
+                await interaction.response.defer(ephemeral=True)
             except:
                 return
-                        
-            allowed_roles = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
-            user_roles = [role.id for role in interaction.user.roles]
-            
-            has_allowed = any(r in allowed_roles for r in user_roles)
-            is_admin_user = interaction.user.guild_permissions.administrator
-            if not (has_allowed or is_admin_user):
-                await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
-                return
   
+            if not await check_employee_exists(interaction, employee):
+                await interaction.followup.send("❌ Этот работник не найден в базе данных", ephemeral=True)
+                return
+
             employee_data = self.database.get_employee(employee.id)
             start_date = employee_data.get("join_date", employee.joined_at.strftime("%d.%m.%Y")) if employee_data else employee.joined_at.strftime("%d.%m.%Y")
             
@@ -529,8 +549,8 @@ class StaffBot(discord.Client):
                 if role:
                     try:
                         await employee.remove_roles(role)
-                    except:
-                        pass
+                    except Exception as e:
+                        print(f"❌ Ошибка снятия роли при увольнении: {e}")
 
         @self.tree.command(name="отпуск", description="Отпуск работника")
         @app_commands.describe(employee="Выберите работника", reason="Причина", duration="Срок отпуска")
@@ -542,18 +562,17 @@ class StaffBot(discord.Client):
                 await interaction.response.send_message("❌ Подождите 5 секунд перед следующей командой", ephemeral=True)
                 return
             
-            try:
-                await interaction.response.defer()
-            except:
+            if not await check_permissions(interaction):
+                await interaction.response.send_message("❌ Недостаточно прав", ephemeral=True)
                 return
             
-            allowed_roles = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
-            user_roles = [role.id for role in interaction.user.roles]
+            try:
+                await interaction.response.defer(ephemeral=True)
+            except:
+                return
 
-            has_allowed = any(r in allowed_roles for r in user_roles)
-            is_admin_user = interaction.user.guild_permissions.administrator
-            if not (has_allowed or is_admin_user):
-                await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
+            if not await check_employee_exists(interaction, employee):
+                await interaction.followup.send("❌ Этот работник не найден в базе данных", ephemeral=True)
                 return
 
             embed = discord.Embed(title="🏖️ Отпуск работника", color=0x00ffff)
@@ -564,18 +583,17 @@ class StaffBot(discord.Client):
             embed.set_footer(text=f"Оформил: {interaction.user.display_name}")
             
             await interaction.followup.send(embed=embed)
-            await self.send_to_employee_dm(employee, embed)
 
         @self.tree.command(name="тест", description="Проверка бота")
         async def test(interaction: discord.Interaction):
             if interaction.guild is None:
                 await interaction.response.send_message("❌ Команды можно использовать только на сервере", ephemeral=True)
                 return
-    
+
             try:
-                await interaction.response.send_message("✅ Бот работает")
-            except:
-                pass
+                await interaction.response.send_message("✅ Бот работает", ephemeral=True)
+            except Exception as e:
+                await interaction.response.send_message(f"❌ Ошибка: {str(e)}", ephemeral=True)
 
 token = os.getenv('TOKEN')
 if not token:
