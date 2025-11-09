@@ -197,9 +197,15 @@ class StaffBot(discord.Client):
     async def setup_hook(self):
         @self.tree.error
         async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-            if isinstance(error, app_commands.CommandInvokeError) and "already been acknowledged" in str(error):
-                return
-            print(f"❌ Ошибка команды: {error}")
+            if isinstance(error, app_commands.CommandInvokeError):
+                original = error.original
+                if isinstance(original, discord.NotFound) and "Unknown interaction" in str(original):
+                    return
+                if isinstance(original, discord.HTTPException) and "already been acknowledged" in str(original):
+                    return
+                print(f"❌ Критическая ошибка команды: {original}")
+            else:
+                print(f"❌ Ошибка команды: {error}")
 
         async def is_guild(interaction: discord.Interaction) -> bool:
             if interaction.guild is None:
@@ -222,18 +228,15 @@ class StaffBot(discord.Client):
             
             try:
                 await interaction.response.defer()
-            except discord.errors.HTTPException as e:
-                if "already been acknowledged" in str(e):
-                    pass
-                else:
-                    raise
+            except:
+                return
                 
-            allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
+            allowed_roles = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
             
-            has_allowed = any(r in allowed_roles_ids for r in user_roles)
-            is_admin = getattr(interaction.user, "guild_permissions", None) and interaction.user.guild_permissions.administrator
-            if not (has_allowed or is_admin):
+            has_allowed = any(r in allowed_roles for r in user_roles)
+            is_admin_user = interaction.user.guild_permissions.administrator
+            if not (has_allowed or is_admin_user):
                 await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
                 return
                   
@@ -266,71 +269,74 @@ class StaffBot(discord.Client):
         async def staff_list(interaction: discord.Interaction):
             if not await is_guild(interaction):
                 return
-            
-            if not self.check_cooldown(interaction.user.id, "staff_list", 5):
-                await interaction.response.send_message("❌ Подождите 5 секунд перед следующей командой", ephemeral=True)
-                return
-            
+    
             try:
                 await interaction.response.defer()
-            except discord.errors.HTTPException as e:
-                if "already been acknowledged" in str(e):
-                    pass
-                else:
-                    raise
-
-            employees = self.database.get_all_employees()
-            
-            if not employees:
-                await interaction.followup.send("📂 База работников пуста", ephemeral=True)
+            except:
                 return
-            
-            embed = discord.Embed(title="📂 База работников", color=0x00ff00)
-            
-            for user_id, data in employees.items():
+    
+            employees = self.database.get_all_employees()
+            if not employees:
                 try:
-                    member = await interaction.guild.fetch_member(int(user_id))
-                    mention = member.mention
+                    await interaction.followup.send("📂 База работников пуста")
                 except:
+                    pass
+                return
+    
+            embed = discord.Embed(title="📂 База работников", color=0x00ff00)
+
+            for user_id, data in employees.items():
+                member = interaction.guild.get_member(int(user_id))
+                if member:
+                    mention = member.mention
+                else:
                     mention = data["name"]
-                
+
                 warnings = self.database.get_warnings(int(user_id))
                 warn_text = f" ({warnings} выговоров)" if warnings > 0 else ""
-                
+
                 embed.add_field(
-                    name=f"{data['position']} - {data['name']}", 
-                    value=f"{mention}{warn_text}\nПринят: {data['join_date']}", 
+                    name=f"{data['position']} - {data['name']}",
+                    value=f"{mention}{warn_text}\nПринят: {data['join_date']}",
                     inline=False
                 )
-            
-            await interaction.followup.send(embed=embed)
+
+            try:
+                await interaction.followup.send(embed=embed)
+            except:
+                pass
 
         @self.tree.command(name="инфо_работник", description="Информация о работнике")
         @app_commands.describe(employee="Выберите работника")
         async def employee_info(interaction: discord.Interaction, employee: discord.Member):
             if not await is_guild(interaction):
                 return
-            
-            if not self.check_cooldown(interaction.user.id, "employee_info", 5):
-                await interaction.response.send_message("❌ Подождите 5 секунд перед следующей командой", ephemeral=True)
+    
+            try:
+                await interaction.response.defer()
+            except:
                 return
-            
-            await interaction.response.send_message("⏳ Загружаем информацию...", ephemeral=True)
                 
             employee_data = self.database.get_employee(employee.id)
             if not employee_data or not employee_data.get("active", True):
-                await interaction.edit_original_response(content="❌ Этот работник не найден в базе данных")
+                try:
+                    await interaction.followup.send("❌ Этот работник не найден в базе данных")
+                except:
+                    pass
                 return
-            
+    
             warnings = self.database.get_warnings(employee.id)
-            
+    
             embed = discord.Embed(title="📋 Информация о работнике", color=0x00ff00)
             embed.add_field(name="Имя", value=employee.display_name, inline=True)
             embed.add_field(name="Должность", value=employee_data["position"], inline=True)
             embed.add_field(name="Дата приема", value=employee_data["join_date"], inline=True)
             embed.add_field(name="Выговоры", value=f"{warnings}/3", inline=True)
-            
-            await interaction.edit_original_response(content=None, embed=embed)
+    
+            try:
+                await interaction.followup.send(embed=embed)
+            except:
+                pass
 
         @self.tree.command(name="выговор", description="Выдает выговор работнику")
         @app_commands.describe(employee="Выберите работника", reason="Причина для выговора")
@@ -344,13 +350,10 @@ class StaffBot(discord.Client):
             
             try:
                 await interaction.response.defer()
-            except discord.errors.HTTPException as e:
-                if "already been acknowledged" in str(e):
-                    pass
-                else:
-                    raise
-                
-            allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
+            except:
+                return
+           
+            allowed_roles = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
             if employee.id == interaction.user.id:
                 await interaction.followup.send("❌ Нельзя выдать выговор самому себе!", ephemeral=True)
@@ -360,9 +363,9 @@ class StaffBot(discord.Client):
                 await interaction.followup.send("❌ Причина слишком длинная (максимум 500 символов)", ephemeral=True)
                 return
             
-            has_allowed = any(r in allowed_roles_ids for r in user_roles)
-            is_admin = getattr(interaction.user, "guild_permissions", None) and interaction.user.guild_permissions.administrator
-            if not (has_allowed or is_admin):
+            has_allowed = any(r in allowed_roles for r in user_roles)
+            is_admin_user = interaction.user.guild_permissions.administrator
+            if not (has_allowed or is_admin_user):
                 await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
                 return
             
@@ -416,18 +419,15 @@ class StaffBot(discord.Client):
             
             try:
                 await interaction.response.defer()
-            except discord.errors.HTTPException as e:
-                if "already been acknowledged" in str(e):
-                    pass
-                else:
-                    raise
-                
-            allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
+            except:
+                return
+               
+            allowed_roles = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
             
-            has_allowed = any(r in allowed_roles_ids for r in user_roles)
-            is_admin = getattr(interaction.user, "guild_permissions", None) and interaction.user.guild_permissions.administrator
-            if not (has_allowed or is_admin):
+            has_allowed = any(r in allowed_roles for r in user_roles)
+            is_admin_user = interaction.user.guild_permissions.administrator
+            if not (has_allowed or is_admin_user):
                 await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
                 return
             
@@ -466,18 +466,15 @@ class StaffBot(discord.Client):
             
             try:
                 await interaction.response.defer()
-            except discord.errors.HTTPException as e:
-                if "already been acknowledged" in str(e):
-                    pass
-                else:
-                    raise
-                
-            allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
+            except:
+                return
+               
+            allowed_roles = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
             
-            has_allowed = any(r in allowed_roles_ids for r in user_roles)
-            is_admin = getattr(interaction.user, "guild_permissions", None) and interaction.user.guild_permissions.administrator
-            if not (has_allowed or is_admin):
+            has_allowed = any(r in allowed_roles for r in user_roles)
+            is_admin_user = interaction.user.guild_permissions.administrator
+            if not (has_allowed or is_admin_user):
                 await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
                 return
        
@@ -503,18 +500,15 @@ class StaffBot(discord.Client):
             
             try:
                 await interaction.response.defer()
-            except discord.errors.HTTPException as e:
-                if "already been acknowledged" in str(e):
-                    pass
-                else:
-                    raise
-                
-            allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
+            except:
+                return
+                        
+            allowed_roles = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
             
-            has_allowed = any(r in allowed_roles_ids for r in user_roles)
-            is_admin = getattr(interaction.user, "guild_permissions", None) and interaction.user.guild_permissions.administrator
-            if not (has_allowed or is_admin):
+            has_allowed = any(r in allowed_roles for r in user_roles)
+            is_admin_user = interaction.user.guild_permissions.administrator
+            if not (has_allowed or is_admin_user):
                 await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
                 return
   
@@ -554,18 +548,15 @@ class StaffBot(discord.Client):
             
             try:
                 await interaction.response.defer()
-            except Exception as e:
-                if "already been acknowledged" in str(e):
-                    pass
-                else:
-                    raise
-
-            allowed_roles_ids = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
+            except:
+                return
+            
+            allowed_roles = [1200579581149712416, 1200579581149712417, 1200579581149712415, 1200579581128749114, 1200579581128749113, 1402693590655963156, 1200579581128749112]
             user_roles = [role.id for role in interaction.user.roles]
 
-            has_allowed = any(r in allowed_roles_ids for r in user_roles)
-            is_admin = getattr(interaction.user, "guild_permissions", None) and interaction.user.guild_permissions.administrator
-            if not (has_allowed or is_admin):
+            has_allowed = any(r in allowed_roles for r in user_roles)
+            is_admin_user = interaction.user.guild_permissions.administrator
+            if not (has_allowed or is_admin_user):
                 await interaction.followup.send("❌ Недостаточно прав", ephemeral=True)
                 return
 
@@ -584,8 +575,11 @@ class StaffBot(discord.Client):
             if interaction.guild is None:
                 await interaction.response.send_message("❌ Команды можно использовать только на сервере", ephemeral=True)
                 return
-            
-            await interaction.response.send_message("✅ Бот работает", ephemeral=True)
+    
+            try:
+                await interaction.response.send_message("✅ Бот работает")
+            except:
+                pass
 
 token = os.getenv('TOKEN')
 if not token:
