@@ -140,6 +140,14 @@ class StaffBot(discord.Client):
         self.database = StaffDatabase()
         self.last_command_use = {}
 
+    async def on_interaction(self, interaction: discord.Interaction):
+        if interaction.type == discord.InteractionType.application_command:
+            command_name = interaction.command.name if interaction.command else "unknown"
+            user_name = f"{interaction.user.name}#{interaction.user.discriminator}"
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            
+            print(f"[{timestamp}] Слэш-команда: /{command_name} | Пользователь: {user_name} (ID: {interaction.user.id})")
+
     async def on_ready(self):
         print(f'✅ {self.user} ready to work!')
         try:
@@ -231,7 +239,6 @@ class StaffBot(discord.Client):
             return True
 
         async def check_permissions(interaction: discord.Interaction) -> bool:
-            """Проверка прав пользователя"""
             allowed_roles = [1200579581149712416, 1200579581149712417, 1200579581149712415, 
                            1200579581128749114, 1200579581128749113, 1402693590655963156, 
                            1200579581128749112]
@@ -245,7 +252,6 @@ class StaffBot(discord.Client):
             return True
 
         async def check_employee_exists(interaction: discord.Interaction, employee: discord.Member) -> bool:
-            """Проверка существования работника в базе"""
             employee_data = self.database.get_employee(employee.id)
             if not employee_data or not employee_data.get("active", True):
                 return False
@@ -594,7 +600,7 @@ class StaffBot(discord.Client):
                 await interaction.response.send_message("✅ Бот работает", ephemeral=True)
             except Exception as e:
                 await interaction.response.send_message(f"❌ Ошибка: {str(e)}", ephemeral=True)
-
+        
 token = os.getenv('TOKEN')
 if not token:
     raise RuntimeError("TOKEN env var is not set. Set TOKEN in env before running the bot")
