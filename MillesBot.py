@@ -14,101 +14,49 @@ class StaffDatabase:
         self.filename = filename
         self.lock = asyncio.Lock()
         self.data = self.load_data()
-
-    def sanitize_input(self, text: str, max_length: int = 200) -> str:
-        if not isinstance(text, str):
-            text = str(text)
-        text = text.replace('\n', ' ').replace('\r', '').strip()
-        text = text[:max_length]
-        return text
+        print(f"📁 База загружена: {os.path.abspath(self.filename)}")
+        print(f"📊 Сотрудников в базе: {len(self.data['employees'])}")
 
     def load_data(self):
         base_data = {"employees": {}, "warnings": {}}
-        if not os.path.exists(self.filename) or os.path.getsize(self.filename) == 0:
-            try:
-                with open(self.filename, 'w', encoding='utf-8') as f:
-                    json.dump(base_data, f, ensure_ascii=False, indent=2)
-            except Exception as e:
-                print(f"❌ Ошибка создания файла: {e}")
+        if not os.path.exists(self.filename):
+            with open(self.filename, 'w', encoding='utf-8') as f:
+                json.dump(base_data, f, ensure_ascii=False, indent=2)
             return base_data
 
         try:
             with open(self.filename, 'r', encoding='utf-8') as f:
-                content = f.read()
-                if not content.strip():
-                    with open(self.filename, 'w', encoding='utf-8') as fw:
-                        json.dump(base_data, fw, ensure_ascii=False, indent=2)
-                    return base_data
-                return json.loads(content)
-        except json.JSONDecodeError as e:
-            print(f"❌ Ошибка JSON: {e}. Создаю бэкап и новый файл.")
-            try:
-                backup_name = f"staff_data_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-                try:
-                    os.rename(self.filename, backup_name)
-                    print(f"💾 Резервная копия создана: {backup_name}")
-                except Exception:
-                    pass
-            except Exception:
-                pass
-            try:
-                with open(self.filename, 'w', encoding='utf-8') as f:
-                    json.dump(base_data, f, ensure_ascii=False, indent=2)
-            except Exception as e2:
-                print(f"❌ Не удалось создать новый файл: {e2}")
+                return json.load(f)
+        except:
             return base_data
-        except Exception as e:
-            print(f"❌ Ошибка при загрузке: {e}")
-            return base_data
-
-    def _sync_save(self, tmp, data):
-        try:
-            with open(tmp, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, self.filename)
-        except Exception as e:
-            if os.path.exists(tmp):
-                try:
-                    os.remove(tmp)
-                except:
-                    pass
-            print(f"❌ Ошибка записи файла: {e}")
 
     async def save_data(self):
-        tmp = f"{self.filename}.tmp"
-        try:
-            data_to_save = self.data.copy()
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, self._sync_save, tmp, data_to_save)
-        except Exception as e:
-            print(f"❌ Ошибка сохранения данных: {e}")
+        async with self.lock:
+            try:
+                with open(self.filename, 'w', encoding='utf-8') as f:
+                    json.dump(self.data, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                print(f"❌ Ошибка сохранения: {e}")
 
     async def add_employee(self, user_id, name, position, join_date):
-        async with self.lock:
-            safe_name = self.sanitize_input(name)
-            safe_position = self.sanitize_input(position)
-            safe_join_date = self.sanitize_input(join_date)
-
-            self.data["employees"][str(user_id)] = {
-                "name": safe_name,
-                "position": safe_position,
-                "join_date": safe_join_date,
-                "active": True
-            }
+        self.data["employees"][str(user_id)] = {
+            "name": name,
+            "position": position,
+            "join_date": join_date,
+            "active": True
+        }
         await self.save_data()
 
     async def update_employee(self, user_id, **kwargs):
-        async with self.lock:
-            if str(user_id) in self.data["employees"]:
-                for key, value in kwargs.items():
-                    self.data["employees"][str(user_id)][key] = value
-        await self.save_data()
+        if str(user_id) in self.data["employees"]:
+            for key, value in kwargs.items():
+                self.data["employees"][str(user_id)][key] = value
+            await self.save_data()
 
     async def remove_employee(self, user_id):
-        async with self.lock:
-            if str(user_id) in self.data["employees"]:
-                self.data["employees"][str(user_id)]["active"] = False
-        await self.save_data()
+        if str(user_id) in self.data["employees"]:
+            self.data["employees"][str(user_id)]["active"] = False
+            await self.save_data()
 
     def get_employee(self, user_id):
         return self.data["employees"].get(str(user_id))
@@ -117,18 +65,16 @@ class StaffDatabase:
         return {uid: data for uid, data in self.data["employees"].items() if data.get("active", True)}
 
     async def set_warnings(self, user_id, count):
-        async with self.lock:
-            self.data["warnings"][str(user_id)] = count
+        self.data["warnings"][str(user_id)] = count
         await self.save_data()
 
     def get_warnings(self, user_id):
         return self.data["warnings"].get(str(user_id), 0)
 
     async def remove_warnings(self, user_id):
-        async with self.lock:
-            if str(user_id) in self.data["warnings"]:
-                del self.data["warnings"][str(user_id)]
-        await self.save_data()
+        if str(user_id) in self.data["warnings"]:
+            del self.data["warnings"][str(user_id)]
+            await self.save_data()
 
 class StaffBot(discord.Client):
     def __init__(self):
@@ -139,14 +85,6 @@ class StaffBot(discord.Client):
         self.tree = app_commands.CommandTree(self)
         self.database = StaffDatabase()
         self.last_command_use = {}
-
-    async def on_interaction(self, interaction: discord.Interaction):
-        if interaction.type == discord.InteractionType.application_command:
-            command_name = interaction.command.name if interaction.command else "unknown"
-            user_name = f"{interaction.user.name}#{interaction.user.discriminator}"
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            
-            print(f"[{timestamp}] Слэш-команда: /{command_name} | Пользователь: {user_name} (ID: {interaction.user.id})")
 
     async def on_ready(self):
         print(f'✅ {self.user} ready to work!')
